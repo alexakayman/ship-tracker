@@ -32,48 +32,53 @@ export async function executeWithRetry<T>(
   if (cacheKey) {
     const cached = responseCache.get(cacheKey);
     const now = Date.now();
-    
+
     if (cached && now < cached.expiresAt) {
       console.log(`Cache hit for ${cacheKey}`);
       return cached.data;
     }
   }
-  
+
   let retries = 0;
   let delay = initialDelay;
-  
+
   while (true) {
     try {
       const result = await fn();
-      
+
       if (cacheKey) {
         const now = Date.now();
         responseCache.set(cacheKey, {
           data: result,
           timestamp: now,
-          expiresAt: now + cacheDuration
+          expiresAt: now + cacheDuration,
         });
       }
-      
+
       return result;
     } catch (error: any) {
       // Handle rate limiting
-      if (error.status === 403 && 
-          error.response?.headers?.['x-ratelimit-remaining'] === '0') {
-        
+      if (
+        error.status === 403 &&
+        error.response?.headers?.["x-ratelimit-remaining"] === "0"
+      ) {
         if (retries >= maxRetries) {
           throw new RateLimitError();
         }
-        
-        const resetTime = error.response?.headers?.['x-ratelimit-reset'];
-        const waitTime = resetTime 
-          ? (parseInt(resetTime, 10) * 1000) - Date.now() + 1000 // Add 1s buffer
+
+        const resetTime = error.response?.headers?.["x-ratelimit-reset"];
+        const waitTime = resetTime
+          ? parseInt(resetTime, 10) * 1000 - Date.now() + 1000 // Add 1s buffer
           : delay;
-        
-        console.warn(`Rate limited, retrying after ${waitTime}ms (attempt ${retries + 1}/${maxRetries})`);
-        
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        
+
+        console.warn(
+          `Rate limited, retrying after ${waitTime}ms (attempt ${
+            retries + 1
+          }/${maxRetries})`
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, waitTime));
+
         delay *= 2;
         retries++;
       } else {
@@ -93,30 +98,30 @@ export async function executeInBatches<T>(
   batchSize: number = 5
 ): Promise<Array<T | Error>> {
   const results: Array<T | Error> = [];
-  
+
   // Process requests in batches to avoid rate limits
   for (let i = 0; i < requests.length; i += batchSize) {
     const batch = requests.slice(i, i + batchSize);
-    
+
     const batchResults = await Promise.allSettled(
-      batch.map(fn => executeWithRetry(fn))
+      batch.map((fn) => executeWithRetry(fn))
     );
-    
+
     // Process results
-    batchResults.forEach(result => {
-      if (result.status === 'fulfilled') {
+    batchResults.forEach((result) => {
+      if (result.status === "fulfilled") {
         results.push(result.value);
       } else {
         results.push(result.reason);
       }
     });
-    
+
     // Add a small delay between batches
     if (i + batchSize < requests.length) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
-  
+
   return results;
 }
 
@@ -131,11 +136,11 @@ export async function checkRateLimitStatus(octokit: Octokit): Promise<{
 }> {
   try {
     const { data } = await octokit.rateLimit.get();
-    
+
     return {
       remaining: data.rate.remaining,
       limit: data.rate.limit,
-      resetTime: new Date(data.rate.reset * 1000)
+      resetTime: new Date(data.rate.reset * 1000),
     };
   } catch (error) {
     console.error("Error checking rate limit:", error);
@@ -172,33 +177,18 @@ export async function getCommitCountForRepo(
   username: string
 ): Promise<number> {
   const cacheKey = `commits-${owner}-${repo}-${username}`;
-  
+
   return executeWithRetry(
     async () => {
       // Use the search API to get a count quickly
       const { data } = await octokit.search.commits({
         q: `repo:${owner}/${repo} author:${username}`,
-        per_page: 1
+        per_page: 1,
       });
-      
+
       return data.total_count;
     },
     cacheKey,
     60 * 60 * 1000 // Cache for 1 hour
   );
 }
-
-/**
- * Gets detailed commit statistics for a user in a repository
- */
-export async function getDetailedCommitStats(
-  octokit: Octokit,
-  owner: string,
-  repo: string,
-  username: string
-): Promise<{
-  totalCount: number;
-  lastWeekCount: number;
-  lastMonthCount: number;
-}> {
-  // Set up date filters
