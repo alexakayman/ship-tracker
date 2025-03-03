@@ -1,5 +1,10 @@
 import { GithubUser } from "../types";
 import { Octokit } from "@octokit/rest";
+import {
+  executeWithRetry,
+  executeInBatches,
+  checkRateLimitStatus,
+} from "./GitHubUtils";
 
 const octokit = new Octokit({
   auth: process.env.NEXT_PUBLIC_GITHUB_TOKEN,
@@ -243,25 +248,46 @@ async function efficientAnalysis(
     const weekFilter = oneWeekAgo.toISOString().split("T")[0];
     const monthFilter = oneMonthAgo.toISOString().split("T")[0];
 
-    // Get total commits using search API
-    const { data: yearlyData } = await octokit.search.commits({
-      q: `author:${username}`,
-      per_page: 1,
-    });
+    // Get total commits using search API with retry logic
+    const yearlyData = await executeWithRetry(
+      async () => {
+        const { data } = await octokit.search.commits({
+          q: `author:${username}`,
+          per_page: 1,
+        });
+        return data;
+      },
+      `total-commits-${username}`,
+      30 * 60 * 1000 // Cache for 30 minutes
+    );
     totalCommitCount = yearlyData.total_count;
 
-    // Get monthly commits
-    const { data: monthlyData } = await octokit.search.commits({
-      q: `author:${username} author-date:>${monthFilter}`,
-      per_page: 1,
-    });
+    // Get monthly commits with retry logic
+    const monthlyData = await executeWithRetry(
+      async () => {
+        const { data } = await octokit.search.commits({
+          q: `author:${username} author-date:>${monthFilter}`,
+          per_page: 1,
+        });
+        return data;
+      },
+      `monthly-commits-${username}`,
+      10 * 60 * 1000 // Cache for 10 minutes
+    );
     monthlyCommits = monthlyData.total_count;
 
-    // Get weekly commits
-    const { data: weeklyData } = await octokit.search.commits({
-      q: `author:${username} author-date:>${weekFilter}`,
-      per_page: 1,
-    });
+    // Get weekly commits with retry logic
+    const weeklyData = await executeWithRetry(
+      async () => {
+        const { data } = await octokit.search.commits({
+          q: `author:${username} author-date:>${weekFilter}`,
+          per_page: 1,
+        });
+        return data;
+      },
+      `weekly-commits-${username}`,
+      5 * 60 * 1000 // Cache for 5 minutes
+    );
     weeklyCommits = weeklyData.total_count;
   } catch (error) {
     console.warn(
@@ -272,9 +298,15 @@ async function efficientAnalysis(
     // If search API fails, analyze a sample of most recently active repositories
     const sampleRepos = repos.slice(0, 10); // Take 10 most recently active repos
 
-    // Process sample repositories
-    const sampleResults = await Promise.all(
-      sampleRepos.map(async (repo) => {
+    // Check rate limit status before proceeding
+    const rateLimitInfo = await checkRateLimitStatus(octokit);
+    console.log(
+      `Rate limit status: ${rateLimitInfo.remaining}/${rateLimitInfo.limit}, resets at ${rateLimitInfo.resetTime}`
+    );
+
+    // Process sample repositories using batched execution to avoid rate limits
+    const sampleRequests = sampleRepos.map((repo) => {
+      return async () => {
         try {
           const { data: participationStats } =
             await octokit.repos.getParticipationStats({
@@ -316,11 +348,19 @@ async function efficientAnalysis(
           );
           return { weekly: 0, monthly: 0, total: 0 };
         }
-      })
-    );
+      };
+    });
+
+    // Execute requests in batches of 3
+    const sampleResults = await executeInBatches(sampleRequests, 3);
 
     // Sum up sample results
     sampleResults.forEach((result) => {
+      // Skip errors
+      if (result instanceof Error) {
+        console.warn(`Error in sample processing:`, result);
+        return;
+      }
       weeklyCommits += result.weekly;
       monthlyCommits += result.monthly;
       totalCommitCount += result.total;
@@ -359,11 +399,18 @@ async function efficientAnalysis(
 // Helper function to fetch pull requests count
 export async function fetchUserPullRequests(username: string): Promise<number> {
   try {
-    const { data: pullRequestData } =
-      await octokit.search.issuesAndPullRequests({
-        q: `author:${username} type:pr`,
-        per_page: 1,
-      });
+    // Use executeWithRetry for PR count with caching
+    const pullRequestData = await executeWithRetry(
+      async () => {
+        const { data } = await octokit.search.issuesAndPullRequests({
+          q: `author:${username} type:pr`,
+          per_page: 1,
+        });
+        return data;
+      },
+      `pull-requests-${username}`,
+      60 * 60 * 1000 // Cache for 1 hour
+    );
 
     return pullRequestData.total_count;
   } catch (error) {
