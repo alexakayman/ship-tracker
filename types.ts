@@ -11,5 +11,6 @@ export interface GithubUser {
     monthlyCommits: number;
     totalCommits: number;
     contributionGraph: string; // URL or data for the graph
+    topRepos: number;
   };
 }
