@@ -1,6 +1,7 @@
 "use client";
 
 import { GithubUser } from "../types";
+import Image from "next/image";
 
 interface UserCardProps {
   user: GithubUser;
@@ -9,10 +10,12 @@ interface UserCardProps {
 export function UserCard({ user }: UserCardProps) {
   return (
     <div className="flex items-center gap-4">
-      <img
+      <Image
         src={user.avatarUrl}
         alt={`${user.username} avatar`}
-        className="w-10 h-10 rounded-full border-2 border-[#2C2C2C]/10"
+        width={40}
+        height={40}
+        className="rounded-full border-2 border-[#2C2C2C]/10"
       />
       <div className="flex flex-col gap-1">
         <a
