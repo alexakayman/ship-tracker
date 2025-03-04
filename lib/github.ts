@@ -67,7 +67,7 @@ export async function fetchGithubUserData(
         async () => {
           const { data } = await octokit.search.commits({
             q: `author:${username}`,
-            per_page: 1,
+            per_page: 5,
           });
           return data;
         },
@@ -85,7 +85,7 @@ export async function fetchGithubUserData(
     let totalDeletions = 0;
     let commitsWithStats = 0;
 
-    for (const repo of repos.slice(0, 4)) {
+    for (const repo of repos.slice(0, 5)) {
       try {
         const commits = await executeWithRetry(
           async () => {
@@ -123,9 +123,17 @@ export async function fetchGithubUserData(
             stats?.deletions !== undefined &&
             (stats.additions > 0 || stats.deletions > 0)
           ) {
-            totalAdditions += stats.additions;
-            totalDeletions += stats.deletions;
-            commitsWithStats++;
+            // Skip anomalous commits (more than 10K lines changed)
+            const totalChanges = stats.additions + stats.deletions;
+            if (totalChanges <= 10000) {
+              totalAdditions += stats.additions;
+              totalDeletions += stats.deletions;
+              commitsWithStats++;
+            } else {
+              console.log(
+                `Skipping anomalous commit in ${repo.name} with ${totalChanges} lines changed`
+              );
+            }
           }
         }
       } catch (error) {

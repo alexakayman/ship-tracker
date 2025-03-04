@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import UserInput from "../components/UserInput";
 import GitHubTable from "../components/GitHubTable";
 import { fetchGithubUserData } from "../lib/github";
 import { GithubUser } from "../types";
 import { Toaster, toast } from "react-hot-toast";
+import { useSearchParams } from "next/navigation";
 
 export default function Home() {
+  const searchParams = useSearchParams();
   const [users, setUsers] = useState<GithubUser[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [loadingInfo, setLoadingInfo] = useState<{ count: number }>({
@@ -16,6 +18,20 @@ export default function Home() {
   const [failedUsers, setFailedUsers] = useState<
     Array<{ username: string; error: string }>
   >([]);
+
+  // Load users from URL on mount
+  useEffect(() => {
+    const usersParam = searchParams.get("users");
+    if (usersParam) {
+      const usersList = usersParam
+        .split(",")
+        .map((u) => u.trim())
+        .filter(Boolean);
+      if (usersList.length > 0) {
+        handleAddUsers(usersList);
+      }
+    }
+  }, [searchParams]);
 
   const handleAddUsers = async (usernames: string[]) => {
     if (usernames.length === 0) return { success: 0, errors: 0 };
@@ -146,15 +162,18 @@ export default function Home() {
       <div className="relative container mx-auto px-4 py-8 z-10 w-full flex flex-col gap-[300px]">
         <div className="mb-8 justify-center items-center">
           <h1 className="w-full text-center text-7xl text-[#E9E2C3] font-serif font-extrabold tracking-tight">
-            Ship Tracker
+            {searchParams.get("label") || "Ship Tracker"}
           </h1>
+          <h2 className="w-full text-center text-3xl text-[#E9E2C3] font-serif tracking-tight mt-4">
+            Ship Tracker
+          </h2>
         </div>
 
         <div className="relative flex flex-col p-8 rounded-xl overflow-hidden">
           <div className="absolute inset-0 bg-[#EDE6DE]" />
           <div className="absolute inset-0 bg-[url('/paper.jpg')] bg-cover bg-center opacity-20" />
           <div className="relative z-10">
-            <UserInput onAddUsers={handleAddUsers} />
+            <UserInput onAddUsers={handleAddUsers} users={users} />
 
             {loading && (
               <div className="text-center py-4 text-[#2C2C2C]">

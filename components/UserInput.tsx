@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Papa from "papaparse";
 import { toast } from "react-hot-toast";
+import { GithubUser } from "../types";
 
 interface UserInputProps {
   onAddUsers: (usernames: string[]) => Promise<{
@@ -10,6 +12,7 @@ interface UserInputProps {
     errors: number;
   }>;
   isBatchProcessing?: boolean;
+  users: GithubUser[];
 }
 
 interface CSVRow {
@@ -20,7 +23,9 @@ interface CSVRow {
 export default function UserInput({
   onAddUsers,
   isBatchProcessing = false,
+  users,
 }: UserInputProps) {
+  const searchParams = useSearchParams();
   const [username, setUsername] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -218,6 +223,28 @@ export default function UserInput({
   const showCsvPreview = Boolean(csvFile && csvUsernames.length > 0);
   const isBusy = isLoading || isBatchProcessing || uploadProgress.inProgress;
 
+  const handleShare = () => {
+    if (users.length === 0) {
+      toast.error("Add some users first!");
+      return;
+    }
+
+    const usernames = users.map((u) => u.username).join(",");
+    const label = searchParams.get("label");
+    const url = new URL(window.location.origin + window.location.pathname);
+
+    // Add parameters in correct order
+    if (label) {
+      url.searchParams.set("label", label);
+    }
+    url.searchParams.set("users", usernames);
+
+    navigator.clipboard
+      .writeText(url.toString())
+      .then(() => toast.success("Shareable URL copied to clipboard!"))
+      .catch(() => toast.error("Failed to copy URL"));
+  };
+
   return (
     <div className="relative z-10">
       <div className="p-4">
@@ -258,6 +285,16 @@ export default function UserInput({
                 disabled={isBusy}
               />
             </label>
+
+            <button
+              onClick={handleShare}
+              className={`px-6 py-2 bg-[#2C2C2C] text-white rounded font-medium shadow-[inset_0_-2px_4px_rgba(0,0,0,0.2)] hover:bg-[#2C2C2C]/90 hover:shadow-[inset_0_-3px_4px_rgba(0,0,0,0.3)] active:shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] transition-all ${
+                users.length === 0 ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+              disabled={users.length === 0}
+            >
+              Share URL
+            </button>
           </div>
         </div>
 
