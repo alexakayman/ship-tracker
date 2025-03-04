@@ -85,7 +85,7 @@ export async function fetchGithubUserData(
     let totalDeletions = 0;
     let commitsWithStats = 0;
 
-    for (const repo of repos.slice(2, 6)) {
+    for (const repo of repos.slice(0, 4)) {
       try {
         const commits = await executeWithRetry(
           async () => {
