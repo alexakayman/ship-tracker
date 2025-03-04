@@ -97,23 +97,23 @@ export async function executeWithRetry<T>(
         const resetTime = (error as GitHubApiError).response?.headers[
           "x-ratelimit-reset"
         ];
-        const waitTime = resetTime
-          ? parseInt(resetTime, 10) * 1000 - Date.now() + 1000 // Add 1s buffer
-          : delay;
+        if (!resetTime) {
+          // If no reset time, use exponential backoff
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          delay *= 2;
+        } else {
+          // Wait until rate limit resets plus 1 second buffer
+          const waitTime = Math.max(
+            parseInt(resetTime, 10) * 1000 - Date.now() + 1000,
+            1000
+          );
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
 
-        console.warn(
-          `Rate limited, retrying after ${waitTime}ms (attempt ${
-            retries + 1
-          }/${maxRetries})`
-        );
-
-        await new Promise((resolve) => setTimeout(resolve, waitTime));
-
-        delay *= 2;
         retries++;
-      } else {
-        throw error;
+        continue;
       }
+      throw error;
     }
   }
 }

@@ -31,62 +31,120 @@ export async function fetchGithubUserData(
   username: string
 ): Promise<GithubUser | { error: { message: string } }> {
   try {
-    const octokit = new Octokit();
-
-    // Fetch basic user info
-    const userResponse = await octokit.users.getByUsername({ username });
-    const userData = userResponse.data;
-
-    // Fetch repositories
-    const reposResponse = await octokit.repos.listForUser({
-      username,
-      sort: "updated",
-      per_page: 100,
+    // Reuse octokit instance
+    const octokit = new Octokit({
+      auth: process.env.NEXT_PUBLIC_GITHUB_TOKEN,
     });
 
-    const repos = reposResponse.data;
+    // Fetch basic user info with rate limit protection
+    const userData = await executeWithRetry(
+      async () => {
+        const { data } = await octokit.users.getByUsername({ username });
+        return data;
+      },
+      `user-${username}`,
+      60 * 60 * 1000 // Cache user data for 1 hour
+    );
 
-    // Get commit stats
-    let totalCommits = 0;
-    let totalAdditions = 0;
-    let totalDeletions = 0;
-
-    for (const repo of repos.slice(0, 5)) {
-      try {
-        const commitsResponse = await octokit.repos.listCommits({
-          owner: username,
-          repo: repo.name,
-          author: username,
+    // Fetch repositories with rate limit protection
+    const repos = await executeWithRetry(
+      async () => {
+        const { data } = await octokit.repos.listForUser({
+          username,
+          sort: "updated",
           per_page: 100,
         });
+        return data;
+      },
+      `repos-${username}`,
+      30 * 60 * 1000 // Cache repos for 30 minutes
+    );
 
-        totalCommits += commitsResponse.data.length;
-
-        for (const commit of commitsResponse.data.slice(0, 10)) {
-          const commitResponse = await octokit.repos.getCommit({
-            owner: username,
-            repo: repo.name,
-            ref: commit.sha,
+    // Get total commit count using search API with rate limit protection
+    let totalCommits = 0;
+    try {
+      const searchData = await executeWithRetry(
+        async () => {
+          const { data } = await octokit.search.commits({
+            q: `author:${username}`,
+            per_page: 1,
           });
+          return data;
+        },
+        `total-commits-${username}`,
+        30 * 60 * 1000 // Cache for 30 minutes
+      );
+      totalCommits = searchData.total_count;
+    } catch (error) {
+      console.warn(`Error fetching total commits for ${username}:`, error);
+      totalCommits = 0;
+    }
 
-          if (commitResponse.data.stats) {
-            totalAdditions += commitResponse.data.stats.additions ?? 0;
-            totalDeletions += commitResponse.data.stats.deletions ?? 0;
+    // Sample commits from recent repos for size calculation
+    let totalAdditions = 0;
+    let totalDeletions = 0;
+    let commitsWithStats = 0;
+
+    for (const repo of repos.slice(2, 6)) {
+      try {
+        const commits = await executeWithRetry(
+          async () => {
+            const { data } = await octokit.repos.listCommits({
+              owner: username,
+              repo: repo.name,
+              author: username,
+              per_page: 10,
+            });
+            return data;
+          },
+          `commits-${username}-${repo.name}`,
+          15 * 60 * 1000 // Cache for 15 minutes
+        );
+
+        // Get commit details with stats
+        for (const commit of commits) {
+          const commitData = await executeWithRetry(
+            async () => {
+              const { data } = await octokit.repos.getCommit({
+                owner: username,
+                repo: repo.name,
+                ref: commit.sha,
+              });
+              return data;
+            },
+            `commit-${username}-${repo.name}-${commit.sha}`,
+            60 * 60 * 1000 // Cache for 1 hour
+          );
+
+          // Only include commits that have actual changes in size calculation
+          const stats = commitData.stats;
+          if (
+            stats?.additions !== undefined &&
+            stats?.deletions !== undefined &&
+            (stats.additions > 0 || stats.deletions > 0)
+          ) {
+            totalAdditions += stats.additions;
+            totalDeletions += stats.deletions;
+            commitsWithStats++;
           }
         }
       } catch (error) {
+        // If we can't access this repo's commits, try the next one
         console.warn(`Error fetching commits for ${repo.name}:`, error);
         continue;
       }
     }
 
+    // Calculate average size only from commits with stats
     const avgCommitSize =
-      totalCommits > 0
-        ? Math.round((totalAdditions + totalDeletions) / totalCommits)
+      commitsWithStats > 0
+        ? Math.round((totalAdditions + totalDeletions) / commitsWithStats)
         : 0;
 
-    const commitsPerDay = Math.round(totalCommits / 30);
-    const commitsPerWeek = Math.round(totalCommits / 4);
+    // Calculate commit frequencies based on total commits
+    const monthlyCommits = Math.round(totalCommits / 12); // Average per month over a year
+    const commitsPerDay = Math.round(monthlyCommits / 30); // Average per day in a month
+    const commitsPerWeek = Math.round(monthlyCommits / 4); // Average per week in a month
 
     // Get pull requests count
     const pullRequests = await fetchUserPullRequests(username);
@@ -101,7 +159,7 @@ export async function fetchGithubUserData(
         commitsPerDay,
         commitsPerWeek,
         weeklyCommits: commitsPerWeek,
-        monthlyCommits: totalCommits,
+        monthlyCommits,
         totalCommits,
         avgCommitSize,
         contributionGraph: `https://ghchart.rshah.org/${username}`,
