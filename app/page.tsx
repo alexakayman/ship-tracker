@@ -7,15 +7,6 @@ import { fetchGithubUserData } from "../lib/github";
 import { GithubUser } from "../types";
 import { Toaster, toast } from "react-hot-toast";
 
-// Type for error objects returned from GitHub API
-interface GitHubErrorResult {
-  error: {
-    message: string;
-    statusCode?: number;
-    name: string;
-  };
-}
-
 export default function Home() {
   const [users, setUsers] = useState<GithubUser[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -27,7 +18,7 @@ export default function Home() {
   >([]);
 
   const handleAddUsers = async (usernames: string[]) => {
-    if (usernames.length === 0) return;
+    if (usernames.length === 0) return { success: 0, errors: 0 };
 
     // Filter out duplicates
     const uniqueUsernames = usernames.filter(
@@ -40,7 +31,7 @@ export default function Home() {
       toast.error(
         "These GitHub users have already been added or failed previously"
       );
-      return;
+      return { success: 0, errors: 0 };
     }
 
     // Set loading state with count info
@@ -118,9 +109,15 @@ export default function Home() {
           );
         }
       }
+
+      return {
+        success: successfulUsers.length,
+        errors: erroredUsers.length,
+      };
     } catch (err) {
       toast.error("An unexpected error occurred. Please try again.");
       console.error(err);
+      return { success: 0, errors: uniqueUsernames.length };
     } finally {
       setLoading(false);
       setLoadingInfo({ count: 0 });
@@ -131,13 +128,6 @@ export default function Home() {
   const handleRetryUser = async (username: string) => {
     setFailedUsers((prev) => prev.filter((user) => user.username !== username));
     await handleAddUsers([username]);
-  };
-
-  // Handle removing a user
-  const handleRemoveUser = (username: string) => {
-    setUsers((prevUsers) =>
-      prevUsers.filter((user) => user.username !== username)
-    );
   };
 
   return (

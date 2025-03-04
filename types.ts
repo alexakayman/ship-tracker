@@ -10,6 +10,7 @@ export interface GithubUser {
     weeklyCommits: number;
     monthlyCommits: number;
     totalCommits: number;
+    avgCommitSize: number;
     contributionGraph: string; // URL or data for the graph
     topRepos: number;
   };

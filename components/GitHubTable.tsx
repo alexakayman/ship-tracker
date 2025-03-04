@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { UserCard } from "./UserCard";
 import { GithubUser } from "../types";
+import Image from "next/image";
 
 interface GitHubTableProps {
   users: GithubUser[];
@@ -13,7 +14,8 @@ type SortKey =
   | "commitsPerWeek"
   | "weeklyCommits"
   | "monthlyCommits"
-  | "totalCommits";
+  | "totalCommits"
+  | "avgCommitSize";
 
 export default function GitHubTable({ users }: GitHubTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("commitsPerWeek"); // Default sort key
@@ -33,7 +35,7 @@ export default function GitHubTable({ users }: GitHubTableProps) {
       setSortOrder(sortOrder === "asc" ? "desc" : "asc");
     } else {
       setSortKey(key);
-      setSortOrder("desc"); // Default to descending when switching columns
+      setSortOrder("desc");
     }
   };
 
@@ -107,6 +109,16 @@ export default function GitHubTable({ users }: GitHubTableProps) {
                 direction={sortOrder}
               />
             </th>
+            <th
+              className="px-6 py-3 text-left text-xs font-medium text-[#2C2C2C] uppercase tracking-wider cursor-pointer hover:text-[#2C2C2C]/70"
+              onClick={() => handleSort("avgCommitSize")}
+            >
+              Avg. Commit Size
+              <SortArrow
+                active={sortKey === "avgCommitSize"}
+                direction={sortOrder}
+              />
+            </th>
             <th className="px-6 py-3 text-left text-xs font-medium text-[#2C2C2C] uppercase tracking-wider">
               Contribution Graph
             </th>
@@ -136,10 +148,15 @@ export default function GitHubTable({ users }: GitHubTableProps) {
               <td className="px-6 py-4 whitespace-nowrap text-sm text-[#2C2C2C] font-mono">
                 {user.stats.totalCommits}
               </td>
+              <td className="px-6 py-4 whitespace-nowrap text-sm text-[#2C2C2C] font-mono">
+                {user.stats.avgCommitSize} LOC
+              </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm">
-                <img
+                <Image
                   src={user.stats.contributionGraph}
                   alt={`${user.username} contribution graph`}
+                  width={300}
+                  height={100}
                   className="max-w-xs rounded shadow-sm"
                 />
               </td>

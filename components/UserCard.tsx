@@ -23,6 +23,7 @@ export function UserCard({ user }: UserCardProps) {
           target="_blank"
           rel="noopener noreferrer"
           className="text-[#FF5D0A] hover:text-[#FF5D0A]/80 font-serif transition-colors"
+          title={`${user.username} - Avg. commit size: ${user.stats.avgCommitSize} LOC`}
         >
           {user.username}
         </a>

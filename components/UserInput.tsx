@@ -2,11 +2,14 @@
 
 import { useState, useEffect } from "react";
 import Papa from "papaparse";
-import { toast } from "react-hot-toast"; // Import toast if you're using it
+import { toast } from "react-hot-toast";
 
 interface UserInputProps {
-  onAddUsers: (usernames: string[]) => Promise<any>;
-  isBatchProcessing?: boolean; // New prop to track if batch processing is happening
+  onAddUsers: (usernames: string[]) => Promise<{
+    success: number;
+    errors: number;
+  }>;
+  isBatchProcessing?: boolean;
 }
 
 interface CSVRow {
@@ -28,7 +31,6 @@ export default function UserInput({
     inProgress: boolean;
   }>({ total: 0, processed: 0, inProgress: false });
 
-  // Handle single user addition
   const handleAddUser = async () => {
     if (username.trim()) {
       try {
@@ -36,9 +38,11 @@ export default function UserInput({
         console.log(`Adding single user: ${username.trim()}`);
         await onAddUsers([username.trim()]);
         setUsername("");
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("Error adding user:", error);
-        toast?.error(`Failed to add user: ${error.message || "Unknown error"}`);
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
+        toast?.error(`Failed to add user: ${errorMessage}`);
       } finally {
         setIsLoading(false);
       }
@@ -57,7 +61,6 @@ export default function UserInput({
     setCsvFile(file);
     setIsLoading(true);
 
-    // Parse the CSV to extract usernames
     Papa.parse<CSVRow>(file, {
       complete: (results) => {
         console.log("CSV parsing complete", results);
@@ -98,7 +101,7 @@ export default function UserInput({
             invalidRows.length === 1
               ? `Row ${invalidRows[0]} contains an invalid GitHub username and will be skipped.`
               : `${invalidRows.length} rows contain invalid GitHub usernames and will be skipped.`;
-          toast?.warning(message);
+          toast(`⚠️ ${message}`, { icon: "⚠️" });
         }
 
         console.log(
@@ -172,7 +175,6 @@ export default function UserInput({
 
       // Show completion message
       const successCount = result?.success || 0;
-      const errorCount = result?.errors || 0;
 
       if (successCount > 0) {
         toast?.success(
@@ -198,7 +200,7 @@ export default function UserInput({
     setCsvFile(null);
     setCsvUsernames([]);
     setUploadProgress({ total: 0, processed: 0, inProgress: false });
-    toast?.info("CSV processing cancelled");
+    toast("CSV processing cancelled", { icon: "ℹ️" });
   };
 
   // Track external batch processing state
@@ -213,7 +215,7 @@ export default function UserInput({
     }
   }, [isBatchProcessing, uploadProgress.inProgress]);
 
-  const showCsvPreview = csvFile && csvUsernames.length > 0;
+  const showCsvPreview = Boolean(csvFile && csvUsernames.length > 0);
   const isBusy = isLoading || isBatchProcessing || uploadProgress.inProgress;
 
   return (
@@ -332,34 +334,6 @@ export default function UserInput({
           </div>
         )}
 
-        {/* Loading indicator */}
-        {isLoading && !showCsvPreview && (
-          <div className="mt-4 text-[#2C2C2C] font-serif flex items-center">
-            <svg
-              className="animate-spin -ml-1 mr-3 h-5 w-5 text-[#FF5D0A]"
-              xmlns="http://www.w3.org/2000/svg"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              ></circle>
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            Processing GitHub data...
-          </div>
-        )}
-
-        {/* Processing batch indicator */}
         {isBatchProcessing && !isLoading && !showCsvPreview && (
           <div className="mt-4 text-[#2C2C2C] font-serif">
             Processing GitHub users in the background... This may take several
